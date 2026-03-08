@@ -38,11 +38,26 @@ export default function AuthScreen() {
       });
 
       if (error) {
-        Alert.alert('Erro', 'Usuário ou senha incorretos.');
+        // --- POP-UP SUGERINDO CADASTRO SE O LOGIN FALHAR ---
+        Alert.alert(
+          'Acesso Negado', 
+          'Usuário não encontrado ou senha incorreta. Deseja criar uma conta nova?',
+          [
+            { text: 'Tentar novamente', style: 'cancel' },
+            { text: 'Criar Conta', onPress: () => setIsLogin(false) }
+          ]
+        );
       } else {
         router.replace('/home');
       }
     } else {
+      // --- VALIDAÇÃO DE SENHA (MÍNIMO 6 DÍGITOS) ---
+      if (senha.length < 6) {
+        Alert.alert('Senha Fraca', 'Sua senha deve ter pelo menos 6 caracteres para garantir a segurança do repositório!');
+        setLoading(false);
+        return;
+      }
+
       if (!nomeNormal) {
         Alert.alert('Atenção', 'Preencha o seu nome normal!');
         setLoading(false);
@@ -63,7 +78,7 @@ export default function AuthScreen() {
       if (error) {
         Alert.alert('Erro no Cadastro', error.message);
       } else {
-        Alert.alert('Sucesso!', 'Conta criada. Agora você pode fazer o login.');
+        Alert.alert('Sucesso!', 'Conta criada com sucesso. Agora é só conectar!');
         setIsLogin(true);
       }
     }
@@ -75,7 +90,6 @@ export default function AuthScreen() {
       <StatusBar barStyle="light-content" backgroundColor="#010409" />
       
       <View style={styles.content}>
-        {/* LOGO SIMBOLIZADA */}
         <View style={styles.logoContainer}>
              <MaterialIcons name="code" size={60} color="#F05DCC" />
              <Text style={styles.headerLogo}>SHCHAT</Text>
@@ -88,7 +102,7 @@ export default function AuthScreen() {
                 <MaterialIcons name="person-outline" size={20} color="#666" style={styles.inputIcon} />
                 <TextInput
                     style={styles.input}
-                    placeholder="Nome Completo"
+                    placeholder="Seu Nome (Ex: Alysson Rodrigues)"
                     placeholderTextColor="#666"
                     value={nomeNormal}
                     onChangeText={setNomeNormal}
@@ -128,16 +142,16 @@ export default function AuthScreen() {
                     style={styles.button}
                 >
                     <Text style={styles.buttonText}>
-                        {loading ? 'PROCESSANDO...' : (isLogin ? 'CONECTAR' : 'CRIAR CONTA')}
+                        {loading ? 'COMPILANDO...' : (isLogin ? 'CONECTAR' : 'CRIAR PERFIL')}
                     </Text>
                 </LinearGradient>
             </TouchableOpacity>
 
             <TouchableOpacity onPress={() => setIsLogin(!isLogin)} style={styles.switchButton}>
               <Text style={styles.switchText}>
-                {isLogin ? 'Novo por aqui? ' : 'Já possui acesso? '}
+                {isLogin ? 'Primeiro acesso? ' : 'Já é da casa? '}
                 <Text style={styles.switchTextBold}>
-                    {isLogin ? 'Crie seu perfil' : 'Faça login'}
+                    {isLogin ? 'Desenvolva seu perfil' : 'Faça login'}
                 </Text>
               </Text>
             </TouchableOpacity>
@@ -148,82 +162,19 @@ export default function AuthScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#010409',
-  },
-  content: {
-    flex: 1,
-    justifyContent: 'center',
-    padding: 30,
-  },
-  logoContainer: {
-    alignItems: 'center',
-    marginBottom: 50,
-  },
-  headerLogo: {
-    fontSize: 32,
-    fontWeight: '900',
-    color: '#FFF',
-    letterSpacing: 4,
-    marginTop: 10,
-  },
-  tagline: {
-    color: '#2FDAD3',
-    fontSize: 12,
-    letterSpacing: 2,
-    textTransform: 'uppercase',
-    marginTop: 5,
-    opacity: 0.8,
-  },
-  form: {
-    width: '100%',
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#0D1117',
-    borderWidth: 1,
-    borderColor: '#1a1a1a',
-    borderRadius: 12,
-    marginBottom: 15,
-    paddingHorizontal: 15,
-  },
-  inputIcon: {
-    marginRight: 10,
-  },
-  input: {
-    flex: 1,
-    paddingVertical: 15,
-    color: '#C9D1D9',
-    fontSize: 16,
-  },
-  buttonWrapper: {
-    marginTop: 10,
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  button: {
-    padding: 18,
-    alignItems: 'center',
-  },
-  buttonText: {
-    color: '#010409',
-    fontSize: 14,
-    fontWeight: '900',
-    letterSpacing: 2,
-  },
-  switchButton: {
-    marginTop: 25,
-    alignItems: 'center',
-  },
-  switchText: {
-    color: '#C9D1D9',
-    fontSize: 14,
-    opacity: 0.7,
-  },
-  switchTextBold: {
-    color: '#2FDAD3',
-    fontWeight: 'bold',
-  }
+  container: { flex: 1, backgroundColor: '#010409' },
+  content: { flex: 1, justifyContent: 'center', padding: 30 },
+  logoContainer: { alignItems: 'center', marginBottom: 50 },
+  headerLogo: { fontSize: 32, fontWeight: '900', color: '#FFF', letterSpacing: 4, marginTop: 10 },
+  tagline: { color: '#2FDAD3', fontSize: 12, letterSpacing: 2, textTransform: 'uppercase', marginTop: 5, opacity: 0.8 },
+  form: { width: '100%' },
+  inputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0D1117', borderWidth: 1, borderColor: '#1a1a1a', borderRadius: 12, marginBottom: 15, paddingHorizontal: 15 },
+  inputIcon: { marginRight: 10 },
+  input: { flex: 1, paddingVertical: 15, color: '#C9D1D9', fontSize: 16 },
+  buttonWrapper: { marginTop: 10, borderRadius: 12, overflow: 'hidden' },
+  button: { padding: 18, alignItems: 'center' },
+  buttonText: { color: '#010409', fontSize: 14, fontWeight: '900', letterSpacing: 2 },
+  switchButton: { marginTop: 25, alignItems: 'center' },
+  switchText: { color: '#C9D1D9', fontSize: 14, opacity: 0.7 },
+  switchTextBold: { color: '#2FDAD3', fontWeight: 'bold' }
 });
