@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, SafeAreaView, StatusBar } from 'react-native';
-import { supabase } from '../../supabase'; 
-import { router } from 'expo-router';
+import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { MaterialIcons } from '@expo/vector-icons'; 
+import { router } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import { Alert, SafeAreaView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { supabase } from '../../supabase';
 
 export default function AuthScreen() {
   const [isLogin, setIsLogin] = useState(true); 
@@ -142,7 +142,7 @@ export default function AuthScreen() {
                     style={styles.button}
                 >
                     <Text style={styles.buttonText}>
-                        {loading ? 'COMPILANDO...' : (isLogin ? 'CONECTAR' : 'CRIAR PERFIL')}
+                        {loading ? 'CONECTANDO...' : (isLogin ? 'CONECTAR' : 'CRIAR PERFIL')}
                     </Text>
                 </LinearGradient>
             </TouchableOpacity>
@@ -151,7 +151,7 @@ export default function AuthScreen() {
               <Text style={styles.switchText}>
                 {isLogin ? 'Primeiro acesso? ' : 'Já é da casa? '}
                 <Text style={styles.switchTextBold}>
-                    {isLogin ? 'Desenvolva seu perfil' : 'Faça login'}
+                    {isLogin ? 'Crie seu perfil' : 'Faça login'}
                 </Text>
               </Text>
             </TouchableOpacity>
