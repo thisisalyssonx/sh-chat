@@ -1,16 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, SafeAreaView, Text, TouchableOpacity, Modal, StatusBar, TextInput } from 'react-native';
+import { StyleSheet, View, SafeAreaView, Text, TouchableOpacity, Modal, StatusBar, Alert } from 'react-native';
 import { GiftedChat, Bubble, Send, InputToolbar } from 'react-native-gifted-chat';
 import { supabase } from '../../supabase';
 import { router, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker'; // npx expo install expo-image-picker
 
 export default function ChatScreen() {
     const [messages, setMessages] = useState([]);
     const [currentUser, setCurrentUser] = useState(null);
-    const [modalDeletarVisivel, setModalDeletarVisivel] = useState(false);
-    const [mensagemParaDeletar, setMensagemParaDeletar] = useState(null);
+    const [modalOpcoesVisivel, setModalOpcoesVisivel] = useState(false);
+    const [mensagemSelecionada, setMensagemSelecionada] = useState(null);
+    
+    // Estados para Edição
+    const [editandoId, setEditandoId] = useState(null);
+    const [textoEdicao, setTextoEdicao] = useState('');
 
     const { receptorId, grupoId, nomeReceptor } = useLocalSearchParams();
 
@@ -23,32 +28,40 @@ export default function ChatScreen() {
 
         const canal = supabase
             .channel('chat_universal')
-            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'mensagens' }, (payload) => {
-                const msg = payload.new;
-                let pertenceAEstaConversa = false;
-                if (grupoId) pertenceAEstaConversa = msg.grupo_id === grupoId;
-                else if (receptorId) {
-                    pertenceAEstaConversa = (msg.usuario_id === currentUser?.id && msg.receptor_id === receptorId) ||
-                        (msg.usuario_id === receptorId && msg.receptor_id === currentUser?.id);
-                } else pertenceAEstaConversa = !msg.receptor_id && !msg.grupo_id;
-
-                if (pertenceAEstaConversa) {
-                    const novaMsgFormatada = {
-                        _id: msg.id,
-                        text: msg.texto,
-                        createdAt: new Date(msg.criado_em),
-                        user: { _id: msg.usuario_id, name: msg.nome_usuario || 'Membro' },
-                    };
-                    setMessages((prev) => GiftedChat.append(prev, [novaMsgFormatada]));
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'mensagens' }, (payload) => {
+                if (payload.eventType === 'INSERT') {
+                    const msg = payload.new;
+                    if (pertenceAConversa(msg)) {
+                        const novaMsg = formatarMensagemSupabase(msg);
+                        setMessages((prev) => GiftedChat.append(prev, [novaMsg]));
+                    }
+                } else if (payload.eventType === 'DELETE') {
+                    setMessages((prev) => prev.filter((m) => m._id !== payload.old.id));
+                } else if (payload.eventType === 'UPDATE') {
+                    setMessages((prev) => prev.map(m => m._id === payload.new.id ? formatarMensagemSupabase(payload.new) : m));
                 }
-            })
-            .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'mensagens' }, (payload) => {
-                setMessages((prevMessages) => prevMessages.filter((m) => m._id !== payload.old.id));
             })
             .subscribe();
 
         return () => { supabase.removeChannel(canal); };
     }, [currentUser?.id, grupoId, receptorId]);
+
+    const pertenceAConversa = (msg) => {
+        if (grupoId) return msg.grupo_id === grupoId;
+        if (receptorId) {
+            return (msg.usuario_id === currentUser?.id && msg.receptor_id === receptorId) ||
+                   (msg.usuario_id === receptorId && msg.receptor_id === currentUser?.id);
+        }
+        return !msg.receptor_id && !msg.grupo_id;
+    };
+
+    const formatarMensagemSupabase = (msg) => ({
+        _id: msg.id,
+        text: msg.texto,
+        image: msg.imagem_url, // Suporte para foto
+        createdAt: new Date(msg.criado_em),
+        user: { _id: msg.usuario_id, name: msg.nome_usuario || 'Membro' },
+    });
 
     const configurarUsuario = async () => {
         const { data: { session } } = await supabase.auth.getSession();
@@ -56,14 +69,13 @@ export default function ChatScreen() {
             const userObj = { 
                 id: session.user.id, 
                 _id: session.user.id, 
-                name: session.user.user_metadata.nome_normal || session.user.user_metadata.nome_usuario || 'Alysson Rodrigues' 
+                name: session.user.user_metadata.nome_normal || 'Alysson' 
             };
             setCurrentUser(userObj);
             return userObj;
-        } else {
-            router.replace('/');
-            return null;
         }
+        router.replace('/');
+        return null;
     };
 
     const buscarMensagens = async (myId) => {
@@ -72,22 +84,22 @@ export default function ChatScreen() {
         else if (receptorId) query = query.or(`and(usuario_id.eq.${myId},receptor_id.eq.${receptorId}),and(usuario_id.eq.${receptorId},receptor_id.eq.${myId})`);
         else query = query.is('receptor_id', null).is('grupo_id', null);
 
-        const { data, error } = await query.order('criado_em', { ascending: false });
-        if (!error && data) {
-            const formatadas = data.map((msg) => ({
-                _id: msg.id,
-                text: msg.texto,
-                createdAt: new Date(msg.criado_em),
-                user: { _id: msg.usuario_id, name: msg.nome_usuario || 'Membro' },
-            }));
-            setMessages(formatadas);
-        }
+        const { data } = await query.order('criado_em', { ascending: false });
+        if (data) setMessages(data.map(formatarMensagemSupabase));
     };
 
     const onSend = async (novasMensagens = []) => {
-        const textoDigitado = novasMensagens[0].text;
+        const msg = novasMensagens[0];
+
+        // Se estiver editando, chama a função de update
+        if (editandoId) {
+            await supabase.from('mensagens').update({ texto: msg.text }).eq('id', editandoId);
+            setEditandoId(null);
+            return;
+        }
+
         await supabase.from('mensagens').insert([{
-            texto: textoDigitado,
+            texto: msg.text,
             usuario_id: currentUser.id,
             nome_usuario: currentUser.name,
             receptor_id: grupoId ? null : (receptorId || null),
@@ -95,115 +107,121 @@ export default function ChatScreen() {
         }]);
     };
 
-    const executarExclusao = async () => {
-        if (mensagemParaDeletar) {
-            await supabase.from('mensagens').delete().eq('id', mensagemParaDeletar);
-            setModalDeletarVisivel(false);
-            setMensagemParaDeletar(null);
+    const escolherImagem = async () => {
+        const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsEditing: true,
+            base64: true,
+            quality: 0.5,
+        });
+
+        if (!result.canceled) {
+            const base64Image = `data:image/jpeg;base64,${result.assets[0].base64}`;
+            // Aqui você enviaria para o Supabase Storage. Para simplificar, vamos salvar a base64 no campo imagem_url
+            await supabase.from('mensagens').insert([{
+                texto: '',
+                imagem_url: base64Image,
+                usuario_id: currentUser.id,
+                nome_usuario: currentUser.name,
+                receptor_id: grupoId ? null : (receptorId || null),
+                grupo_id: grupoId || null,
+            }]);
         }
     };
 
-    // CUSTOMIZANDO A BOLHA PARA INCLUIR O NOME
+    const deletarMensagem = async () => {
+        await supabase.from('mensagens').delete().eq('id', mensagemSelecionada._id);
+        setModalOpcoesVisivel(false);
+    };
+
+    const prepararEdicao = () => {
+        setEditandoId(mensagemSelecionada._id);
+        setTextoEdicao(mensagemSelecionada.text);
+        setModalOpcoesVisivel(false);
+        // O GiftedChat vai preencher o input automaticamente se você usar o prop text
+    };
+
     const renderBubble = (props) => {
         const isMine = props.currentMessage.user._id === currentUser.id;
         return (
-            <View>
-                {/* NOME DO USUÁRIO ACIMA DA BOLHA */}
-                <Text style={[styles.chatUsername, { color: isMine ? '#2FDAD3' : '#F05DCC', textAlign: isMine ? 'right' : 'left', marginRight: isMine ? 10 : 0, marginLeft: isMine ? 0 : 10 }]}>
+            <View style={{ maxWidth: '85%' }}> 
+                <Text style={[styles.chatUsername, { color: isMine ? '#2FDAD3' : '#F05DCC', textAlign: isMine ? 'right' : 'left' }]}>
                     {props.currentMessage.user.name}
                 </Text>
                 <Bubble
                     {...props}
                     wrapperStyle={{
-                        right: { backgroundColor: '#0D1117', borderWidth: 1, borderColor: '#1a1a1a', paddingRight: 5, borderRadius: 15 },
-                        left: { backgroundColor: '#161B22', borderWidth: 1, borderColor: '#30363D', borderRadius: 15 },
+                        right: { backgroundColor: '#0D1117', borderWidth: 1, borderColor: '#1a1a1a', padding: 5, borderRadius: 15 },
+                        left: { backgroundColor: '#161B22', borderWidth: 1, borderColor: '#30363D', padding: 5, borderRadius: 15 },
                     }}
                     textStyle={{
-                        right: { color: '#C9D1D9' },
-                        left: { color: '#C9D1D9' },
+                        right: { color: '#C9D1D9', lineHeight: 20 },
+                        left: { color: '#C9D1D9', lineHeight: 20 },
                     }}
                 />
-                {/* SETINHA DE DELETAR DENTRO DA BOLHA */}
                 {isMine && (
                     <TouchableOpacity
-                        onPress={() => {
-                            setMensagemParaDeletar(props.currentMessage._id);
-                            setModalDeletarVisivel(true);
-                        }}
+                        onPress={() => { setMensagemSelecionada(props.currentMessage); setModalOpcoesVisivel(true); }}
                         style={styles.setinhaBotao}
                     >
-                        <MaterialIcons name="keyboard-arrow-down" size={16} color="rgba(255,255,255,0.3)" />
+                        <MaterialIcons name="more-vert" size={16} color="rgba(255,255,255,0.3)" />
                     </TouchableOpacity>
                 )}
             </View>
         );
     };
 
-    // CAMPO DE TEXTO ESTILIZADO (INPUT)
-    const renderInputToolbar = (props) => (
-        <InputToolbar
-            {...props}
-            containerStyle={styles.inputToolbar}
-            primaryStyle={{ alignItems: 'center' }}
-        />
+    const renderActions = () => (
+        <TouchableOpacity style={styles.actionButton} onPress={escolherImagem}>
+            <MaterialIcons name="photo-camera" size={24} color="#F05DCC" />
+        </TouchableOpacity>
     );
-
-    const renderSend = (props) => (
-        <Send {...props}>
-            <View style={styles.sendButton}>
-                <MaterialIcons name="send" size={24} color="#2FDAD3" />
-            </View>
-        </Send>
-    );
-
-    if (!currentUser) return <View style={styles.container} />;
 
     return (
         <SafeAreaView style={styles.container}>
-            <StatusBar barStyle="light-content" backgroundColor="#010409" />
+            <StatusBar barStyle="light-content" />
             
-            <Modal animationType="fade" transparent={true} visible={modalDeletarVisivel}>
+            {/* MODAL DE OPÇÕES (EDITAR/APAGAR) */}
+            <Modal animationType="fade" transparent={true} visible={modalOpcoesVisivel}>
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalContent}>
-                        <MaterialIcons name="delete-sweep" size={40} color="#F05DCC" />
-                        <Text style={styles.modalTitle}>Deletar registro?</Text>
-                        <Text style={styles.modalSubTitle}>Essa ação removerá a mensagem do repositório.</Text>
-                        <View style={styles.modalButtons}>
-                            <TouchableOpacity style={[styles.btnModal, { backgroundColor: '#161B22' }]} onPress={() => setModalDeletarVisivel(false)}>
-                                <Text style={{color: '#C9D1D9'}}>VOLTAR</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity onPress={executarExclusao}>
-                                <LinearGradient colors={['#F05DCC', '#2FDAD3']} style={styles.btnModalGradient}>
-                                    <Text style={{ color: '#010409', fontWeight: 'bold' }}>APAGAR</Text>
-                                </LinearGradient>
-                            </TouchableOpacity>
-                        </View>
+                        <TouchableOpacity style={styles.optionItem} onPress={prepararEdicao}>
+                            <MaterialIcons name="edit" size={24} color="#2FDAD3" />
+                            <Text style={styles.optionText}>EDITAR MENSAGEM</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.optionItem, {marginTop: 20}]} onPress={deletarMensagem}>
+                            <MaterialIcons name="delete-forever" size={24} color="#F05DCC" />
+                            <Text style={styles.optionText}>APAGAR PARA TODOS</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.closeModal} onPress={() => setModalOpcoesVisivel(false)}>
+                            <Text style={{color: '#666'}}>FECHAR</Text>
+                        </TouchableOpacity>
                     </View>
                 </View>
             </Modal>
 
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.replace('/home')} style={styles.backButton}>
-                    <MaterialIcons name="arrow-back-ios" size={20} color="#F05DCC" />
-                </TouchableOpacity>
+                <TouchableOpacity onPress={() => router.replace('/home')}><MaterialIcons name="arrow-back-ios" size={20} color="#F05DCC" /></TouchableOpacity>
                 <View style={styles.headerCenter}>
-                    <Text style={styles.headerTitle} numberOfLines={1}>{nomeReceptor || 'Chat Público'}</Text>
-                    <Text style={styles.headerSub}>{grupoId ? 'GRUPO ATIVO' : 'CHAT PRIVADO'}</Text>
+                    <Text style={styles.headerTitle}>{nomeReceptor || 'Chat Público'}</Text>
+                    <Text style={styles.headerSub}>REPOSITÓRIO ATIVO</Text>
                 </View>
-                <View style={{ width: 40 }} />
+                <View style={{width: 20}} />
             </View>
 
             <GiftedChat
                 messages={messages}
-                onSend={(msgs) => onSend(msgs)}
-                user={{ _id: currentUser.id, name: currentUser.name }}
+                onSend={onSend}
+                user={{ _id: currentUser.id }}
                 renderBubble={renderBubble}
-                renderInputToolbar={renderInputToolbar}
-                renderSend={renderSend}
-                placeholder="Desenvolver mensagem..."
-                showUserAvatar={false}
-                renderAvatar={null}
-                messagesContainerStyle={{ backgroundColor: '#010409', paddingBottom: 10 }}
+                renderActions={renderActions}
+                placeholder={editandoId ? "Editando mensagem..." : "Desenvolver mensagem..."}
+                text={editandoId ? textoEdicao : undefined}
+                onInputTextChanged={editandoId ? setTextoEdicao : undefined}
+                messagesContainerStyle={{ backgroundColor: '#010409' }}
+                renderInputToolbar={(props) => (
+                    <InputToolbar {...props} containerStyle={styles.inputToolbar} />
+                )}
             />
         </SafeAreaView>
     );
@@ -211,29 +229,17 @@ export default function ChatScreen() {
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#010409' },
-    header: { padding: 15, borderBottomWidth: 1, borderBottomColor: '#1a1a1a', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#010409' },
+    header: { padding: 15, borderBottomWidth: 1, borderBottomColor: '#1a1a1a', flexDirection: 'row', alignItems: 'center', backgroundColor: '#010409' },
     headerCenter: { alignItems: 'center', flex: 1 },
-    headerTitle: { fontSize: 16, fontWeight: 'bold', color: '#C9D1D9', textTransform: 'uppercase', letterSpacing: 1 },
-    headerSub: { fontSize: 9, color: '#2FDAD3', letterSpacing: 2, marginTop: 2 },
-    backButton: { padding: 5 },
-    setinhaBotao: { position: 'absolute', bottom: 8, right: 8, zIndex: 999 },
-    sendButton: { marginRight: 10, marginBottom: 5, padding: 5 },
-    chatUsername: { fontSize: 10, fontWeight: '900', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 1 },
-    
-    // ESTILO DO CAMPO DE MENSAGEM (FOOTER)
-    inputToolbar: {
-        backgroundColor: '#0D1117',
-        borderTopWidth: 1,
-        borderTopColor: '#1a1a1a',
-        paddingHorizontal: 10,
-        paddingVertical: 5,
-    },
-
-    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center' },
-    modalContent: { width: '80%', backgroundColor: '#0D1117', borderRadius: 15, padding: 25, alignItems: 'center', borderWidth: 1, borderColor: '#30363D' },
-    modalTitle: { fontSize: 18, fontWeight: 'bold', color: '#C9D1D9', marginTop: 15, marginBottom: 10 },
-    modalSubTitle: { fontSize: 13, color: '#8B949E', marginBottom: 25, textAlign: 'center' },
-    modalButtons: { flexDirection: 'row', justifyContent: 'space-between', width: '100%' },
-    btnModal: { flex: 0.45, padding: 12, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-    btnModalGradient: { paddingVertical: 12, paddingHorizontal: 25, borderRadius: 8, minWidth: 100, alignItems: 'center' }
+    headerTitle: { fontSize: 16, fontWeight: 'bold', color: '#C9D1D9', textTransform: 'uppercase' },
+    headerSub: { fontSize: 9, color: '#2FDAD3', letterSpacing: 2 },
+    setinhaBotao: { position: 'absolute', bottom: 5, right: -15 },
+    chatUsername: { fontSize: 10, fontWeight: '900', marginBottom: 2, textTransform: 'uppercase' },
+    inputToolbar: { backgroundColor: '#0D1117', borderTopColor: '#1a1a1a', padding: 5 },
+    actionButton: { marginLeft: 10, marginBottom: 10, justifyContent: 'center' },
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center' },
+    modalContent: { width: '80%', backgroundColor: '#0D1117', padding: 30, borderRadius: 15, borderWidth: 1, borderColor: '#333' },
+    optionItem: { flexDirection: 'row', alignItems: 'center' },
+    optionText: { color: '#C9D1D9', marginLeft: 15, fontWeight: 'bold', letterSpacing: 1 },
+    closeModal: { marginTop: 30, alignItems: 'center' }
 });
