@@ -14,16 +14,20 @@ export default function HomeScreen() {
     const [modalSenhaVisivel, setModalSenhaVisivel] = useState(false);
     const [modalDeletarVisivel, setModalDeletarVisivel] = useState(false);
 
-    // Estados para criação do grupo
     const [novoGrupoNome, setNovoGrupoNome] = useState('');
     const [novoGrupoSenha, setNovoGrupoSenha] = useState('');
-    const [isPrivado, setIsPrivado] = useState(false); // Nova caixinha
+    const [isPrivado, setIsPrivado] = useState(false);
 
     const [grupoSelecionado, setGrupoSelecionado] = useState(null);
     const [senhaDigitada, setSenhaDigitada] = useState('');
 
+    // --- NOVO ESTADO: Rastreador de notificações ---
+    const [mensagensNaoLidas, setMensagensNaoLidas] = useState({ grupos: {}, privados: {} });
+
     useEffect(() => {
         let canalPresence;
+        let canalMensagensAlertas; // Canal para escutar notificações
+
         const iniciarApp = async () => {
             const { data: { session } } = await supabase.auth.getSession();
             if (session) {
@@ -31,6 +35,7 @@ export default function HomeScreen() {
                 const userId = session.user.id;
                 setUsuarioAtual({ ...userMeta, id: userId });
 
+                // 1. Escuta quem está online
                 canalPresence = supabase.channel('usuarios-online');
                 canalPresence
                     .on('presence', { event: 'sync' }, () => {
@@ -53,6 +58,29 @@ export default function HomeScreen() {
                             });
                         }
                     });
+
+                // 2. Escuta novas mensagens para gerar o ícone de notificação
+                canalMensagensAlertas = supabase.channel('alertas-mensagens')
+                    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'mensagens' }, (payload) => {
+                        const msg = payload.new;
+                        
+                        // Ignora se a mensagem foi enviada por mim mesmo
+                        if (msg.usuario_id === userId) return;
+
+                        setMensagensNaoLidas(prev => {
+                            const novoEstado = { ...prev };
+                            if (msg.grupo_id) {
+                                // Notificação de grupo
+                                novoEstado.grupos = { ...novoEstado.grupos, [msg.grupo_id]: true };
+                            } else if (msg.receptor_id === userId) {
+                                // Notificação de chat privado
+                                novoEstado.privados = { ...novoEstado.privados, [msg.usuario_id]: true };
+                            }
+                            return novoEstado;
+                        });
+                    })
+                    .subscribe();
+
                 buscarGrupos();
             } else {
                 router.replace('/');
@@ -71,6 +99,7 @@ export default function HomeScreen() {
 
         return () => {
             if (canalPresence) supabase.removeChannel(canalPresence);
+            if (canalMensagensAlertas) supabase.removeChannel(canalMensagensAlertas);
             supabase.removeChannel(canalGrupos);
         };
     }, []);
@@ -82,8 +111,6 @@ export default function HomeScreen() {
 
     const confirmarCriacaoGrupo = async () => {
         if (!novoGrupoNome) return;
-        
-        // Se for privado mas não tiver senha, avisa
         if (isPrivado && !novoGrupoSenha) {
             Alert.alert("Atenção", "Defina uma senha para o grupo privado.");
             return;
@@ -130,11 +157,16 @@ export default function HomeScreen() {
         }
     };
 
+    // --- FUNÇÕES DE NAVEGAÇÃO QUE LIMPAM AS NOTIFICAÇÕES ---
     const irParaOChat = (grupo) => {
+        // Limpa a notificação daquele grupo ao entrar
+        setMensagensNaoLidas(prev => ({ ...prev, grupos: { ...prev.grupos, [grupo.id]: false } }));
         router.push({ pathname: '/chat', params: { grupoId: grupo.id, nomeReceptor: grupo.nome } });
     };
 
     const abrirChatPrivado = (usuario) => {
+        // Limpa a notificação daquele chat privado ao entrar
+        setMensagensNaoLidas(prev => ({ ...prev, privados: { ...prev.privados, [usuario.id]: false } }));
         router.push({ pathname: '/chat', params: { receptorId: usuario.id, nomeReceptor: usuario.nome } });
     };
 
@@ -171,6 +203,12 @@ export default function HomeScreen() {
                                     <View style={styles.avatarInterno}>
                                         <Text style={styles.avatarTextoPequeno}>{item.nome.charAt(0).toUpperCase()}</Text>
                                     </View>
+                                    {/* --- ÍCONE DE NOTIFICAÇÃO PRIVADA --- */}
+                                    {mensagensNaoLidas.privados[item.id] && (
+                                        <View style={styles.badgeNotificacao}>
+                                            <MaterialIcons name="notifications-active" size={12} color="#010409" />
+                                        </View>
+                                    )}
                                 </View>
                                 <Text style={[styles.onlineNome, {color: '#2FDAD3'}]} numberOfLines={1}>{item.nome.split(' ')[0]}</Text>
                             </TouchableOpacity>
@@ -195,6 +233,12 @@ export default function HomeScreen() {
                             >
                                 <View style={styles.avatarGrupo}>
                                     <MaterialIcons name="code" size={22} color="#F05DCC" />
+                                    {/* --- ÍCONE DE NOTIFICAÇÃO GRUPO --- */}
+                                    {mensagensNaoLidas.grupos[grupo.id] && (
+                                        <View style={styles.badgeNotificacao}>
+                                            <MaterialIcons name="notifications-active" size={12} color="#010409" />
+                                        </View>
+                                    )}
                                 </View>
                                 <View style={styles.conversaInfo}>
                                     <Text style={styles.nomeGrupo}>{grupo.nome}</Text>
@@ -233,7 +277,6 @@ export default function HomeScreen() {
                             onChangeText={setNovoGrupoNome} 
                         />
 
-                        {/* CAIXINHA DE GRUPO PRIVADO */}
                         <TouchableOpacity 
                             style={styles.checkboxContainer} 
                             onPress={() => setIsPrivado(!isPrivado)}
@@ -246,7 +289,6 @@ export default function HomeScreen() {
                             <Text style={styles.checkboxLabel}>Grupo Privado (com senha)</Text>
                         </TouchableOpacity>
 
-                        {/* MOSTRA O CAMPO DE SENHA APENAS SE FOR PRIVADO */}
                         {isPrivado && (
                             <TextInput 
                                 style={styles.inputPremium} 
@@ -341,7 +383,7 @@ const styles = StyleSheet.create({
     secaoTitulo: { fontSize: 11, fontWeight: 'bold', color: '#C9D1D9', opacity: 0.6, marginBottom: 15, letterSpacing: 2, textTransform: 'uppercase' },
     onlineScroll: { flexDirection: 'row' },
     onlineItem: { alignItems: 'center', marginRight: 15, width: 60 },
-    bordaOnline: { width: 54, height: 54, borderRadius: 27, padding: 2, justifyContent: 'center', alignItems: 'center', borderWidth: 1.5 },
+    bordaOnline: { width: 54, height: 54, borderRadius: 27, padding: 2, justifyContent: 'center', alignItems: 'center', borderWidth: 1.5, position: 'relative' },
     avatarInterno: { width: '100%', height: '100%', borderRadius: 25, backgroundColor: '#010409', justifyContent: 'center', alignItems: 'center' },
     onlineNome: { fontSize: 10, marginTop: 6, fontWeight: 'bold' },
     secaoGrupos: { marginTop: 25 },
@@ -350,7 +392,7 @@ const styles = StyleSheet.create({
     txtBtnNovo: { color: '#C9D1D9', fontWeight: 'bold', fontSize: 11, marginLeft: 5 },
     cardConversaWrapper: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 20, backgroundColor: '#0D1117', borderRadius: 8, marginBottom: 10, borderLeftWidth: 3, borderLeftColor: '#2FDAD3' },
     cardConversa: { flex: 1, flexDirection: 'row', alignItems: 'center', padding: 12 },
-    avatarGrupo: { width: 45, height: 45, borderRadius: 4, backgroundColor: '#010409', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#1a1a1a' },
+    avatarGrupo: { width: 45, height: 45, borderRadius: 4, backgroundColor: '#010409', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#1a1a1a', position: 'relative' },
     conversaInfo: { marginLeft: 15, flex: 1 },
     nomeGrupo: { fontSize: 15, fontWeight: 'bold', color: '#C9D1D9' },
     statusGrupo: { flexDirection: 'row', alignItems: 'center', marginTop: 3 },
@@ -365,5 +407,21 @@ const styles = StyleSheet.create({
     modalButtons: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 },
     btnModalSimple: { padding: 10 },
     btnModalGradient: { paddingVertical: 12, paddingHorizontal: 25, borderRadius: 4 },
-    btnDeletarConfirm: { backgroundColor: '#F05DCC', paddingVertical: 12, paddingHorizontal: 25, borderRadius: 4 }
+    btnDeletarConfirm: { backgroundColor: '#F05DCC', paddingVertical: 12, paddingHorizontal: 25, borderRadius: 4 },
+    
+    // --- ESTILO DO ÍCONE DE NOTIFICAÇÃO ---
+    badgeNotificacao: {
+        position: 'absolute',
+        top: -4,
+        right: -4,
+        backgroundColor: '#2FDAD3',
+        borderRadius: 12,
+        width: 20,
+        height: 20,
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 2,
+        borderColor: '#010409',
+        zIndex: 10,
+    }
 });
