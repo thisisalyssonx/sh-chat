@@ -40,7 +40,6 @@ export default function PerfilScreen() {
 
     if (!errorMeta) {
       Alert.alert("Sucesso", "Perfil atualizado!");
-      // Após atualizar, redirecionamos para a Home
       router.replace('/home'); 
     }
     setLoading(false);
@@ -50,10 +49,9 @@ export default function PerfilScreen() {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#010409" />
       
-      {/* HEADER TECH AJUSTADO */}
       <View style={styles.header}>
         <TouchableOpacity 
-          onPress={() => router.replace('/home')} // Alterado de .back() para .replace('/home')
+          onPress={() => router.replace('/home')} 
           style={styles.backButton}
         >
           <MaterialIcons name="arrow-back-ios" size={20} color="#F05DCC" />
@@ -64,12 +62,14 @@ export default function PerfilScreen() {
       </View>
 
       <View style={styles.content}>
-        {/* AVATAR DE EXIBIÇÃO */}
         <View style={styles.avatarSection}>
             <LinearGradient colors={['#F05DCC', '#2FDAD3']} style={styles.avatarCircle}>
-                <Text style={styles.avatarLetter}>{nomeNormal.charAt(0).toUpperCase()}</Text>
+                <Text style={styles.avatarLetter}>
+                    {nomeNormal ? nomeNormal.charAt(0).toUpperCase() : '?'}
+                </Text>
             </LinearGradient>
-            <Text style={styles.avatarSubtext}>Alysson Rodrigues</Text>
+            {/* AGORA O NOME ABAIXO DO CÍRCULO É DINÂMICO */}
+            <Text style={styles.avatarSubtext}>{nomeNormal || 'Usuário Tech'}</Text>
         </View>
 
         <View style={styles.form}>
@@ -116,14 +116,7 @@ export default function PerfilScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#010409' },
-  header: { 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
-    padding: 20, 
-    borderBottomWidth: 1, 
-    borderColor: '#1a1a1a', 
-    alignItems: 'center' 
-  },
+  header: { flexDirection: 'row', justifyContent: 'space-between', padding: 20, borderBottomWidth: 1, borderColor: '#1a1a1a', alignItems: 'center' },
   backButton: { flexDirection: 'row', alignItems: 'center' },
   backText: { color: '#F05DCC', fontSize: 16, marginLeft: 5 },
   headerTitle: { fontSize: 16, fontWeight: '900', color: '#C9D1D9', letterSpacing: 2 },
@@ -131,19 +124,10 @@ const styles = StyleSheet.create({
   avatarSection: { alignItems: 'center', marginBottom: 40 },
   avatarCircle: { width: 100, height: 100, borderRadius: 50, justifyContent: 'center', alignItems: 'center', elevation: 10 },
   avatarLetter: { fontSize: 40, fontWeight: 'bold', color: '#010409' },
-  avatarSubtext: { color: '#2FDAD3', marginTop: 15, fontSize: 12, letterSpacing: 2, fontWeight: 'bold' },
+  avatarSubtext: { color: '#2FDAD3', marginTop: 15, fontSize: 12, letterSpacing: 2, fontWeight: 'bold', textTransform: 'uppercase' },
   form: { width: '100%' },
   label: { fontSize: 11, color: '#C9D1D9', opacity: 0.5, marginBottom: 10, letterSpacing: 1.5, fontWeight: 'bold' },
-  inputContainer: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    backgroundColor: '#0D1117', 
-    borderWidth: 1, 
-    borderColor: '#1a1a1a', 
-    borderRadius: 12, 
-    marginBottom: 25, 
-    paddingHorizontal: 15 
-  },
+  inputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0D1117', borderWidth: 1, borderColor: '#1a1a1a', borderRadius: 12, marginBottom: 25, paddingHorizontal: 15 },
   inputIcon: { marginRight: 10 },
   input: { flex: 1, paddingVertical: 15, color: '#C9D1D9', fontSize: 16 },
   buttonWrapper: { marginTop: 10, borderRadius: 12, overflow: 'hidden' },
