@@ -11,7 +11,6 @@ export default function ChatScreen() {
     const [currentUser, setCurrentUser] = useState(null);
     const [modalOpcoesVisivel, setModalOpcoesVisivel] = useState(false);
     const [mensagemSelecionada, setMensagemSelecionada] = useState(null);
-    const [textoInput, setTextoInput] = useState(''); 
 
     const { receptorId, grupoId, nomeReceptor } = useLocalSearchParams();
 
@@ -91,7 +90,6 @@ export default function ChatScreen() {
             receptor_id: grupoId ? null : (receptorId || null),
             grupo_id: grupoId || null,
         }]);
-        setTextoInput('');
     };
 
     const escolherImagem = async () => {
@@ -123,7 +121,6 @@ export default function ChatScreen() {
     const renderBubble = (props) => {
         const isMine = props.currentMessage.user._id === currentUser?.id;
         return (
-            // AQUI ESTÁ A CORREÇÃO: width: '100%' avisa que o container não pode passar da tela
             <View style={{ marginBottom: 5, width: '100%', paddingHorizontal: 5 }}> 
                 <Text style={[styles.chatUsername, { color: isMine ? '#2FDAD3' : '#F05DCC', textAlign: isMine ? 'right' : 'left', marginHorizontal: 5 }]}>
                     {props.currentMessage.user.name}
@@ -139,7 +136,6 @@ export default function ChatScreen() {
                         </TouchableOpacity>
                     )}
                     
-                    {/* A MÁGICA DO FLEXSHRINK: Força a bolha a encolher se bater no limite do maxWidth */}
                     <View style={{ flexShrink: 1, maxWidth: isMine ? '85%' : '95%' }}>
                         <Bubble
                             {...props}
@@ -201,8 +197,6 @@ export default function ChatScreen() {
                     </TouchableOpacity>
                 )}
                 placeholder="Desenvolver mensagem..."
-                text={textoInput}
-                onInputTextChanged={setTextoInput}
                 messagesContainerStyle={{ backgroundColor: '#010409' }}
                 renderInputToolbar={(props) => (
                     <InputToolbar {...props} containerStyle={styles.inputToolbar} />
