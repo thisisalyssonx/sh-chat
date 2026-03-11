@@ -15,38 +15,51 @@ export default function ChatScreen() {
     const { receptorId, grupoId, nomeReceptor } = useLocalSearchParams();
 
     useEffect(() => {
+        let canal; // Declaramos aqui para fechar a conexão ao sair da tela
+
         const inicializarChat = async () => {
             const user = await configurarUsuario();
+            
             if (user && user.id) {
                 buscarMensagens(user.id);
+
+                // CORREÇÃO: Criamos o canal AQUI DENTRO usando a variável 'user.id' direta.
+                // Isso impede o bug de "Stale Closure" onde o ouvinte usava um usuário null.
+                canal = supabase
+                    .channel('chat_universal')
+                    .on('postgres_changes', { event: '*', schema: 'public', table: 'mensagens' }, (payload) => {
+                        if (payload.eventType === 'INSERT') {
+                            const msg = payload.new;
+                            
+                            // Lógica de verificação transferida para cá, sempre com o usuário atualizado
+                            let pertence = false;
+                            if (grupoId) {
+                                pertence = msg.grupo_id === grupoId;
+                            } else if (receptorId) {
+                                pertence = (msg.usuario_id === user.id && msg.receptor_id === receptorId) ||
+                                           (msg.usuario_id === receptorId && msg.receptor_id === user.id);
+                            } else {
+                                pertence = !msg.receptor_id && !msg.grupo_id;
+                            }
+
+                            if (pertence) {
+                                setMessages((prev) => {
+                                    // Trava de segurança para não duplicar mensagens rápidas demais
+                                    if (prev.some((m) => m._id === msg.id)) return prev;
+                                    return GiftedChat.append(prev, [formatarMensagemSupabase(msg)]);
+                                });
+                            }
+                        } else if (payload.eventType === 'DELETE') {
+                            setMessages((prev) => prev.filter((m) => m._id !== payload.old.id));
+                        }
+                    })
+                    .subscribe();
             }
         };
         inicializarChat();
 
-        const canal = supabase
-            .channel('chat_universal')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'mensagens' }, (payload) => {
-                if (payload.eventType === 'INSERT') {
-                    if (pertenceAConversa(payload.new)) {
-                        setMessages((prev) => GiftedChat.append(prev, [formatarMensagemSupabase(payload.new)]));
-                    }
-                } else if (payload.eventType === 'DELETE') {
-                    setMessages((prev) => prev.filter((m) => m._id !== payload.old.id));
-                }
-            })
-            .subscribe();
-
-        return () => { supabase.removeChannel(canal); };
+        return () => { if (canal) supabase.removeChannel(canal); };
     }, [grupoId, receptorId]);
-
-    const pertenceAConversa = (msg) => {
-        if (grupoId) return msg.grupo_id === grupoId;
-        if (receptorId) {
-            return (msg.usuario_id === currentUser?.id && msg.receptor_id === receptorId) ||
-                   (msg.usuario_id === receptorId && msg.receptor_id === currentUser?.id);
-        }
-        return !msg.receptor_id && !msg.grupo_id;
-    };
 
     const formatarMensagemSupabase = (msg) => ({
         _id: msg.id,
