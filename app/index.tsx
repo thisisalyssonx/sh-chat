@@ -12,7 +12,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { supabase } from '../../supabase';
+import { supabase } from '../supabase';
 
 export default function AuthScreen() {
   const [isLogin, setIsLogin] = useState(true);

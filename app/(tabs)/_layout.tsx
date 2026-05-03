@@ -15,7 +15,6 @@ export default function TabLayout() {
         tabBarItemStyle: styles.tabItem,
       }}
     >
-      <Tabs.Screen name="index" options={{ href: null }} />
       <Tabs.Screen name="home" options={{ href: null }} />
       <Tabs.Screen name="explore" options={{ href: null }} />
       <Tabs.Screen
