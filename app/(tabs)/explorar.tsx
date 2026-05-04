@@ -66,6 +66,7 @@ export default function ExplorarScreen() {
     const { data: postsData } = await supabase
       .from('posts')
       .select('*')
+      .not('imagem_url', 'is', null)
       .order('criado_em', { ascending: false });
     if (postsData) setTodosPosts(postsData);
 

@@ -47,7 +47,7 @@ export default function PostCard({
 
       {/* IMAGE */}
       {!!post.imagem_url && (
-        <Image source={{ uri: post.imagem_url }} style={styles.postImage} resizeMode="cover" />
+        <Image source={{ uri: post.imagem_url }} style={styles.postImage} resizeMode="contain" />
       )}
 
       {/* ACTIONS */}

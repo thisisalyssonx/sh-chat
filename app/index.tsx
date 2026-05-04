@@ -114,7 +114,6 @@ export default function AuthScreen() {
             <MaterialIcons name="hub" size={40} color="#010409" />
           </LinearGradient>
           <Text style={styles.headerLogo}>The SH</Text>
-          <Text style={styles.tagline}>Sua rede. Sua voz.</Text>
         </View>
 
         <View style={styles.card}>
