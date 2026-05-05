@@ -74,6 +74,9 @@ export default function FeedScreen() {
         .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'posts' }, (payload) => {
           setPosts(prev => prev.filter(p => p.id !== payload.old.id));
         })
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'posts' }, (payload) => {
+          setPosts(prev => prev.map(p => p.id === payload.new.id ? { ...p, ...payload.new } : p));
+        })
         .subscribe();
 
       // Realtime — curtidas

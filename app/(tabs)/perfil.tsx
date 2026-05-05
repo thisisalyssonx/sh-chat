@@ -119,6 +119,7 @@ export default function PerfilScreen() {
     // Atualiza nome nos posts e comentários já existentes
     await supabase.from('posts').update({ nome_usuario: perfil.nome }).eq('usuario_id', usuarioAtual.id);
     await supabase.from('comentarios').update({ nome_usuario: perfil.nome }).eq('usuario_id', usuarioAtual.id);
+    await supabase.from('mensagens').update({ nome_usuario: perfil.nome }).eq('usuario_id', usuarioAtual.id);
 
     await supabase.auth.updateUser({ data: { nome_normal: perfil.nome } });
     if (novaSenha.length > 0) {

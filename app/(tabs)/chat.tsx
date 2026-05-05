@@ -1,21 +1,21 @@
+import { MaterialIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
+  Alert,
+  Image,
+  Modal,
+  SafeAreaView,
+  ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
-  View,
-  SafeAreaView,
-  TouchableOpacity,
-  ScrollView,
-  Modal,
   TextInput,
-  Alert,
-  StatusBar,
-  Image,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { supabase } from '../../supabase';
-import { router } from 'expo-router';
-import { LinearGradient } from 'expo-linear-gradient';
-import { MaterialIcons } from '@expo/vector-icons';
 
 export default function ChatScreen() {
   const [usuarioAtual, setUsuarioAtual] = useState(null);

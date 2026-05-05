@@ -1,6 +1,6 @@
 import { Tabs } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, Platform } from 'react-native';
 
 export default function TabLayout() {
   return (
@@ -62,8 +62,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#0A0A0F',
     borderTopColor: '#1a1a2e',
     borderTopWidth: 1,
-    minHeight: 60,
-    paddingTop: 4,
+    height: Platform.OS === 'ios' ? 85 : 60,
+    paddingBottom: Platform.OS === 'ios' ? 25 : 8,
+    paddingTop: 8,
   },
   tabLabel: {
     fontSize: 10,
