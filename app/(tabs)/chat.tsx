@@ -22,6 +22,7 @@ export default function ChatScreen() {
   const [perfilAtual, setPerfilAtual] = useState(null);
   const [usuariosOnline, setUsuariosOnline] = useState([]);
   const [grupos, setGrupos] = useState([]);
+  const [conversasPrivadas, setConversasPrivadas] = useState([]);
   const [mensagensNaoLidas, setMensagensNaoLidas] = useState({ grupos: {}, privados: {} });
 
   const [modalCriarVisivel, setModalCriarVisivel] = useState(false);
@@ -79,13 +80,18 @@ export default function ChatScreen() {
           setMensagensNaoLidas(prev => {
             const novo = { ...prev };
             if (msg.grupo_id) novo.grupos = { ...novo.grupos, [msg.grupo_id]: true };
-            else if (msg.receptor_id === userId) novo.privados = { ...novo.privados, [msg.usuario_id]: true };
+            else if (msg.receptor_id === userId) {
+              novo.privados = { ...novo.privados, [msg.usuario_id]: true };
+              // Recarregar conversas para colocar no topo ou exibir nova se for o caso
+              buscarConversasPrivadas(userId);
+            }
             return novo;
           });
         })
         .subscribe();
 
       buscarGrupos();
+      buscarConversasPrivadas(userId);
     };
 
     iniciar();
@@ -109,6 +115,37 @@ export default function ChatScreen() {
   const buscarGrupos = async () => {
     const { data } = await supabase.from('grupos').select('*').order('criado_em', { ascending: false });
     if (data) setGrupos(data);
+  };
+
+  const buscarConversasPrivadas = async (meuId) => {
+    const { data: mensagens } = await supabase
+      .from('mensagens')
+      .select('usuario_id, receptor_id, criado_em')
+      .is('grupo_id', null)
+      .or(`usuario_id.eq.${meuId},receptor_id.eq.${meuId}`)
+      .order('criado_em', { ascending: false });
+
+    if (mensagens && mensagens.length > 0) {
+      const mapConversas = {};
+      mensagens.forEach(msg => {
+        const outroId = msg.usuario_id === meuId ? msg.receptor_id : msg.usuario_id;
+        if (!outroId) return;
+        if (!mapConversas[outroId]) {
+          mapConversas[outroId] = msg.criado_em;
+        }
+      });
+      const ids = Object.keys(mapConversas);
+      if (ids.length > 0) {
+        const { data: perfis } = await supabase.from('perfis').select('id, nome, username, avatar_url').in('id', ids);
+        if (perfis) {
+          const formatados = perfis.map(p => ({
+            ...p,
+            ultima: mapConversas[p.id]
+          })).sort((a, b) => new Date(b.ultima).getTime() - new Date(a.ultima).getTime());
+          setConversasPrivadas(formatados);
+        }
+      }
+    }
   };
 
   const criarGrupo = async () => {
@@ -186,6 +223,35 @@ export default function ChatScreen() {
                 );
               })}
             </ScrollView>
+          </View>
+        )}
+
+        {/* CHATS PRIVADOS (DMs) */}
+        {conversasPrivadas.length > 0 && (
+          <View style={styles.secaoGrupos}>
+            <Text style={[styles.secaoLabel, { paddingHorizontal: 16, marginBottom: 10 }]}>DMs RECENTES</Text>
+            {conversasPrivadas.map(usuario => (
+              <View key={usuario.id} style={styles.grupoCard}>
+                <TouchableOpacity
+                  style={styles.grupoTouchable}
+                  onPress={() => abrirChatPrivado(usuario)}
+                >
+                  <View style={styles.grupoIcone}>
+                    {usuario.avatar_url ? (
+                      <Image source={{ uri: usuario.avatar_url }} style={{ width: 44, height: 44, borderRadius: 10 }} />
+                    ) : (
+                      <Text style={{ fontSize: 18, color: '#F05DCC', fontWeight: 'bold' }}>{(usuario.nome || 'U').charAt(0).toUpperCase()}</Text>
+                    )}
+                    {mensagensNaoLidas.privados[usuario.id] && <View style={styles.badge} />}
+                  </View>
+                  <View style={styles.grupoInfo}>
+                    <Text style={styles.grupoNome}>{usuario.nome}</Text>
+                    <Text style={styles.grupoStatus}>@{usuario.username}</Text>
+                  </View>
+                  <MaterialIcons name="chevron-right" size={20} color="#333" />
+                </TouchableOpacity>
+              </View>
+            ))}
           </View>
         )}
 

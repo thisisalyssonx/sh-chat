@@ -108,14 +108,28 @@ export default function PerfilScreen() {
 
   const salvarPerfil = async () => {
     setLoading(true);
-    await supabase.from('perfis').update({ nome: perfil.nome, bio: perfil.bio }).eq('id', usuarioAtual.id);
+    const { error: errPerfil } = await supabase.from('perfis').update({ nome: perfil.nome, bio: perfil.bio }).eq('id', usuarioAtual.id);
+    if (errPerfil) {
+      console.error(errPerfil);
+      Alert.alert('Erro', 'Não foi possível salvar o perfil.');
+      setLoading(false);
+      return;
+    }
+
+    // Atualiza nome nos posts e comentários já existentes
+    await supabase.from('posts').update({ nome_usuario: perfil.nome }).eq('usuario_id', usuarioAtual.id);
+    await supabase.from('comentarios').update({ nome_usuario: perfil.nome }).eq('usuario_id', usuarioAtual.id);
+
     await supabase.auth.updateUser({ data: { nome_normal: perfil.nome } });
     if (novaSenha.length > 0) {
       if (novaSenha.length < 6) { Alert.alert('Senha Fraca', 'Mínimo 6 caracteres.'); setLoading(false); return; }
       const { error } = await supabase.auth.updateUser({ password: novaSenha });
       if (error) Alert.alert('Erro', error.message);
     }
-    Alert.alert('Salvo!', 'Perfil atualizado.');
+    
+    setMeusPosts(prev => prev.map(p => ({ ...p, nome_usuario: perfil.nome })));
+    
+    Alert.alert('Salvo!', 'Perfil atualizado com sucesso.');
     setNovaSenha(''); setEditando(false);
     setLoading(false);
   };
