@@ -15,12 +15,30 @@ import {
   Platform,
   Image,
 } from 'react-native';
-import { supabase } from '../../supabase';
+import { supabase } from '../../libs/supabase';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import PostCard from '../../components/PostCard';
+import { formatarTempo } from '../../utils/formatTime';
+import {
+  buscarTodosPosts,
+  inserirPost,
+  deletarPost as deletarPostDB,
+} from '../../services/postService';
+import {
+  buscarCurtidasDoUsuario,
+  buscarTodasCurtidas,
+  curtir,
+  descurtir,
+} from '../../services/likeService';
+import {
+  buscarComentariosDoPost,
+  buscarContagemTodosComentarios,
+  inserirComentario,
+} from '../../services/commentService';
+import { uploadImagemPost } from '../../services/storageService';
 
 export default function FeedScreen() {
   const [usuarioAtual, setUsuarioAtual] = useState(null);
@@ -95,17 +113,14 @@ export default function FeedScreen() {
   }, []);
 
   const buscarPosts = async (userId?: string) => {
-    const { data } = await supabase
-      .from('posts')
-      .select('*')
-      .order('criado_em', { ascending: false });
+    const data = await buscarTodosPosts();
     if (data) setPosts(data);
     await buscarContagemCurtidas();
     await buscarContagemComentarios();
   };
 
   const buscarContagemComentarios = async () => {
-    const { data } = await supabase.from('comentarios').select('post_id');
+    const data = await buscarContagemTodosComentarios();
     if (data) {
       const contagem: Record<string, number> = {};
       data.forEach(c => { contagem[c.post_id] = (contagem[c.post_id] || 0) + 1; });
@@ -114,10 +129,7 @@ export default function FeedScreen() {
   };
 
   const buscarCurtidasUsuario = async (userId: string) => {
-    const { data } = await supabase
-      .from('curtidas')
-      .select('post_id')
-      .eq('usuario_id', userId);
+    const data = await buscarCurtidasDoUsuario(userId);
     if (data) {
       const mapa = {};
       data.forEach(c => { mapa[c.post_id] = true; });
@@ -126,9 +138,7 @@ export default function FeedScreen() {
   };
 
   const buscarContagemCurtidas = async () => {
-    const { data } = await supabase
-      .from('curtidas')
-      .select('post_id');
+    const data = await buscarTodasCurtidas();
     if (data) {
       const contagem = {};
       data.forEach(c => {
@@ -168,24 +178,15 @@ export default function FeedScreen() {
 
     if (imagemPost?.base64) {
       try {
-        const base64Data = imagemPost.base64;
-        const byteChars = atob(base64Data);
-        const byteNums = new Array(byteChars.length);
-        for (let i = 0; i < byteChars.length; i++) byteNums[i] = byteChars.charCodeAt(i);
-        const blob = new Blob([new Uint8Array(byteNums)], { type: 'image/jpeg' });
-        const fileName = `post_${usuarioAtual.id}_${Date.now()}.jpg`;
-        const { data: uploadData, error: uploadErr } = await supabase.storage
-          .from('post-images')
-          .upload(fileName, blob, { upsert: true, contentType: 'image/jpeg' });
+        const { publicUrl, error: uploadErr } = await uploadImagemPost(imagemPost.base64, usuarioAtual.id);
         if (uploadErr) {
           console.error('Erro upload Storage:', uploadErr);
           Alert.alert('Erro no upload da foto', uploadErr.message);
           setEnviando(false);
           return;
         }
-        if (uploadData) {
-          const { data: urlData } = supabase.storage.from('post-images').getPublicUrl(fileName);
-          imagemUrl = urlData.publicUrl;
+        if (publicUrl) {
+          imagemUrl = publicUrl;
         }
       } catch (e) {
         console.error('Erro upload imagem post:', e);
@@ -199,14 +200,14 @@ export default function FeedScreen() {
     const conteudoFinal = conteudoPost.trim() || null;
 
     // Usar .select() para receber o post inserido de volta e adicionar ao feed imediatamente
-    const { data: novoPost, error } = await supabase.from('posts').insert([{
+    const { data: novoPost, error } = await inserirPost({
       usuario_id: usuarioAtual.id,
       nome_usuario: perfilAtual?.nome || usuarioAtual?.nome_normal || 'Usuário',
       username: perfilAtual?.username || usuarioAtual?.nome_usuario || 'user',
       avatar_url: perfilAtual?.avatar_url || null,
       conteudo: conteudoFinal,
       imagem_url: imagemUrl,
-    }]).select().single();
+    });
 
     if (!error && novoPost) {
       // Adiciona o post no topo IMEDIATAMENTE sem esperar o Realtime
@@ -228,23 +229,17 @@ export default function FeedScreen() {
     const jaCurtiu = curtidas[postId];
 
     if (jaCurtiu) {
-      await supabase.from('curtidas')
-        .delete()
-        .eq('post_id', postId)
-        .eq('usuario_id', usuarioAtual.id);
+      await descurtir(postId, usuarioAtual.id);
       setCurtidas(prev => ({ ...prev, [postId]: false }));
     } else {
-      await supabase.from('curtidas').insert([{
-        post_id: postId,
-        usuario_id: usuarioAtual.id,
-      }]);
+      await curtir(postId, usuarioAtual.id);
       setCurtidas(prev => ({ ...prev, [postId]: true }));
     }
     await buscarContagemCurtidas();
   };
 
   const deletarPost = async (postId: string) => {
-    const { error } = await supabase.from('posts').delete().eq('id', postId);
+    const { error } = await deletarPostDB(postId);
     if (!error) {
       // Remove imediatamente do estado local
       setPosts(prev => prev.filter(p => p.id !== postId));
@@ -256,31 +251,23 @@ export default function FeedScreen() {
   const abrirComentarios = async (post) => {
     setPostSelecionado(post);
     setModalComentarios(true);
-    const { data } = await supabase
-      .from('comentarios')
-      .select('*')
-      .eq('post_id', post.id)
-      .order('criado_em', { ascending: true });
+    const data = await buscarComentariosDoPost(post.id);
     setComentarios(data || []);
   };
 
   const enviarComentario = async () => {
     if (!novoComentario.trim()) return;
     setEnviandoComentario(true);
-    const { error } = await supabase.from('comentarios').insert([{
+    const { error } = await inserirComentario({
       post_id: postSelecionado.id,
       usuario_id: usuarioAtual.id,
       nome_usuario: perfilAtual?.nome || usuarioAtual.nome_normal,
       username: perfilAtual?.username || usuarioAtual.nome_usuario,
       avatar_url: perfilAtual?.avatar_url || null,
       conteudo: novoComentario.trim(),
-    }]);
+    });
     if (!error) {
-      const { data } = await supabase
-        .from('comentarios')
-        .select('*')
-        .eq('post_id', postSelecionado.id)
-        .order('criado_em', { ascending: true });
+      const data = await buscarComentariosDoPost(postSelecionado.id);
       setComentarios(data || []);
       setNovoComentario('');
       // Atualiza contagem localmente
@@ -290,16 +277,6 @@ export default function FeedScreen() {
       }));
     }
     setEnviandoComentario(false);
-  };
-
-  const formatarTempo = (dataStr: string) => {
-    const agora = new Date();
-    const data = new Date(dataStr);
-    const diff = Math.floor((agora.getTime() - data.getTime()) / 1000);
-    if (diff < 60) return 'agora';
-    if (diff < 3600) return `${Math.floor(diff / 60)}m`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
-    return `${Math.floor(diff / 86400)}d`;
   };
 
   return (

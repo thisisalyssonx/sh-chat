@@ -4,12 +4,31 @@ import {
   ScrollView, TextInput, Alert, StatusBar, Image,
   ActivityIndicator, Modal, Pressable, Dimensions,
 } from 'react-native';
-import { supabase } from '../../supabase';
+import { supabase } from '../../libs/supabase';
+import { buscarPerfil, criarPerfil, atualizarNomeBio } from '../../services/profileService';
+import {
+  buscarPostsDoUsuario,
+  deletarPost as deletarPostDB,
+  atualizarNomeNoPosts,
+} from '../../services/postService';
+import {
+  buscarCurtidasDoUsuario,
+  buscarTodasCurtidas,
+  curtir,
+  descurtir,
+} from '../../services/likeService';
+import {
+  buscarContagemTodosComentarios,
+  atualizarNomeNosComentarios,
+} from '../../services/commentService';
+import { atualizarNomeNasMensagens } from '../../services/messageService';
+import { uploadAvatar as uploadAvatarStorage } from '../../services/storageService';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import PostCard from '../../components/PostCard';
+import { formatarTempo } from '../../utils/formatTime';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const GRID_SIZE = Math.floor(SCREEN_WIDTH / 3) - 1;
@@ -38,13 +57,13 @@ export default function PerfilScreen() {
     const userId = session.user.id;
     setUsuarioAtual({ id: userId, ...session.user.user_metadata });
 
-    const { data: perfilData } = await supabase.from('perfis').select('*').eq('id', userId).single();
+    const perfilData = await buscarPerfil(userId);
     if (perfilData) {
       setPerfil(perfilData);
     } else {
       const meta = session.user.user_metadata;
       const novoPerfil = { id: userId, username: meta.nome_usuario || 'user', nome: meta.nome_normal || 'Usuário', bio: '', avatar_url: null };
-      await supabase.from('perfis').insert([novoPerfil]);
+      await criarPerfil(novoPerfil);
       setPerfil(novoPerfil);
     }
 
@@ -52,25 +71,25 @@ export default function PerfilScreen() {
   };
 
   const buscarMeusPosts = async (userId: string) => {
-    const { data } = await supabase.from('posts').select('*').eq('usuario_id', userId).order('criado_em', { ascending: false });
+    const data = await buscarPostsDoUsuario(userId);
 
     if (data) {
       setMeusPosts(data);
 
       // Curtidas do usuário
-      const { data: minhasCurtidas } = await supabase.from('curtidas').select('post_id').eq('usuario_id', userId);
+      const minhasCurtidas = await buscarCurtidasDoUsuario(userId);
       const curtidasMap: Record<string, boolean> = {};
       if (minhasCurtidas) minhasCurtidas.forEach(c => { curtidasMap[c.post_id] = true; });
       setCurtidas(curtidasMap);
 
       // Contagem de curtidas
-      const { data: todasCurtidas } = await supabase.from('curtidas').select('post_id');
+      const todasCurtidas = await buscarTodasCurtidas();
       const contagemMap: Record<string, number> = {};
       if (todasCurtidas) todasCurtidas.forEach(c => { contagemMap[c.post_id] = (contagemMap[c.post_id] || 0) + 1; });
       setContagemCurtidas(contagemMap);
 
       // Contagem de comentários
-      const { data: todosComentarios } = await supabase.from('comentarios').select('post_id');
+      const todosComentarios = await buscarContagemTodosComentarios();
       const comentariosMap: Record<string, number> = {};
       if (todosComentarios) todosComentarios.forEach(c => { comentariosMap[c.post_id] = (comentariosMap[c.post_id] || 0) + 1; });
       setContagemComentarios(comentariosMap);
@@ -87,15 +106,9 @@ export default function PerfilScreen() {
     setUploadingAvatar(true);
     try {
       const base64Data = result.assets[0].base64;
-      const byteChars = atob(base64Data);
-      const byteNums = new Array(byteChars.length);
-      for (let i = 0; i < byteChars.length; i++) byteNums[i] = byteChars.charCodeAt(i);
-      const blob = new Blob([new Uint8Array(byteNums)], { type: 'image/jpeg' });
-      const fileName = `${usuarioAtual.id}/avatar.jpg`;
-      const { error: uploadError } = await supabase.storage.from('avatars').upload(fileName, blob, { upsert: true, contentType: 'image/jpeg' });
+      const { publicUrl, error: uploadError } = await uploadAvatarStorage(base64Data, usuarioAtual.id);
       if (uploadError) { Alert.alert('Erro no upload', uploadError.message); return; }
-      const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(fileName);
-      const avatarUrl = `${urlData.publicUrl}?t=${Date.now()}`;
+      const avatarUrl = `${publicUrl}?t=${Date.now()}`;
       await supabase.from('perfis').update({ avatar_url: avatarUrl }).eq('id', usuarioAtual.id);
       setPerfil(prev => ({ ...prev, avatar_url: avatarUrl }));
       Alert.alert('Sucesso!', 'Foto de perfil atualizada!');
@@ -108,7 +121,7 @@ export default function PerfilScreen() {
 
   const salvarPerfil = async () => {
     setLoading(true);
-    const { error: errPerfil } = await supabase.from('perfis').update({ nome: perfil.nome, bio: perfil.bio }).eq('id', usuarioAtual.id);
+    const { error: errPerfil } = await atualizarNomeBio(usuarioAtual.id, perfil.nome, perfil.bio);
     if (errPerfil) {
       console.error(errPerfil);
       Alert.alert('Erro', 'Não foi possível salvar o perfil.');
@@ -117,9 +130,9 @@ export default function PerfilScreen() {
     }
 
     // Atualiza nome nos posts e comentários já existentes
-    await supabase.from('posts').update({ nome_usuario: perfil.nome }).eq('usuario_id', usuarioAtual.id);
-    await supabase.from('comentarios').update({ nome_usuario: perfil.nome }).eq('usuario_id', usuarioAtual.id);
-    await supabase.from('mensagens').update({ nome_usuario: perfil.nome }).eq('usuario_id', usuarioAtual.id);
+    await atualizarNomeNoPosts(usuarioAtual.id, perfil.nome);
+    await atualizarNomeNosComentarios(usuarioAtual.id, perfil.nome);
+    await atualizarNomeNasMensagens(usuarioAtual.id, perfil.nome);
 
     await supabase.auth.updateUser({ data: { nome_normal: perfil.nome } });
     if (novaSenha.length > 0) {
@@ -139,11 +152,11 @@ export default function PerfilScreen() {
     if (!usuarioAtual) return;
     const jaCurtiu = curtidas[postId];
     if (jaCurtiu) {
-      await supabase.from('curtidas').delete().eq('post_id', postId).eq('usuario_id', usuarioAtual.id);
+      await descurtir(postId, usuarioAtual.id);
       setCurtidas(prev => ({ ...prev, [postId]: false }));
       setContagemCurtidas(prev => ({ ...prev, [postId]: Math.max((prev[postId] || 1) - 1, 0) }));
     } else {
-      await supabase.from('curtidas').insert([{ post_id: postId, usuario_id: usuarioAtual.id }]);
+      await curtir(postId, usuarioAtual.id);
       setCurtidas(prev => ({ ...prev, [postId]: true }));
       setContagemCurtidas(prev => ({ ...prev, [postId]: (prev[postId] || 0) + 1 }));
     }
@@ -153,23 +166,13 @@ export default function PerfilScreen() {
   };
 
   const deletarPost = async (postId: string) => {
-    const { error } = await supabase.from('posts').delete().eq('id', postId);
+    const { error } = await deletarPostDB(postId);
     if (!error) {
       setMeusPosts(prev => prev.filter(p => p.id !== postId));
       setPostModal(null);
     } else {
       Alert.alert('Erro', 'Não foi possível apagar o post.');
     }
-  };
-
-  const formatarTempo = (dataStr: string) => {
-    const agora = new Date();
-    const data = new Date(dataStr);
-    const diff = Math.floor((agora.getTime() - data.getTime()) / 1000);
-    if (diff < 60) return 'agora';
-    if (diff < 3600) return `${Math.floor(diff / 60)}m`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
-    return `${Math.floor(diff / 86400)}d`;
   };
 
   const inicial = (perfil.nome || 'U').charAt(0).toUpperCase();

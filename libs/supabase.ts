@@ -5,7 +5,7 @@ import { Platform } from 'react-native';
 
 const supabaseUrl = 'https://uhgltitmwhoxmszfkext.supabase.co';
 // IMPORTANTE: Lembre-se de colar a sua Publishable key gigante de volta aqui embaixo
-const supabaseAnonKey = 'sb_publishable_mC6IHBmsxWQz_l0HM5Oyqg_AYaGwv5t'; 
+const supabaseAnonKey = 'sb_publishable_mC6IHBmsxWQz_l0HM5Oyqg_AYaGwv5t';
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {

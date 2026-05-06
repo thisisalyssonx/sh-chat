@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, Image, Modal, Pressable } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import { Post } from '../types';
 
 interface PostCardProps {
-  post: any;
-  usuarioAtual: any;
+  post: Post;
+  usuarioAtual: { id: string } | null;
   curtido: boolean;
   onLike: () => void;
   onComentarios: () => void;

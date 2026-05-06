@@ -12,7 +12,8 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { supabase } from '../supabase';
+import { supabase } from '../libs/supabase';
+import { criarPerfil } from '../services/profileService';
 
 export default function AuthScreen() {
   const [isLogin, setIsLogin] = useState(true);
@@ -84,7 +85,7 @@ export default function AuthScreen() {
       } else {
         // Criar perfil na tabela perfis
         if (data.user) {
-          await supabase.from('perfis').upsert({
+          await criarPerfil({
             id: data.user.id,
             username: nomeUsuario.toLowerCase().trim(),
             nome: nomeNormal,
