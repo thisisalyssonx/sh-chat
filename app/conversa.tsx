@@ -1,7 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, SafeAreaView, Text, TouchableOpacity, Modal, StatusBar, Alert, Image } from 'react-native';
 import { GiftedChat, Bubble, InputToolbar } from 'react-native-gifted-chat';
-import { supabase } from '../supabase';
+import { supabase } from '../libs/supabase';
+import {
+  buscarMensagensDaConversa,
+  inserirMensagem,
+  deletarMensagem as deletarMensagemDB,
+} from '../services/messageService';
+import { uploadImagemMensagem } from '../services/storageService';
 import { router, useLocalSearchParams } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -83,24 +89,19 @@ export default function ConversaScreen() {
   };
 
   const buscarMensagens = async (myId) => {
-    let query = supabase.from('mensagens').select('*');
-    if (grupoId) query = query.eq('grupo_id', grupoId);
-    else if (receptorId) query = query.or(`and(usuario_id.eq.${myId},receptor_id.eq.${receptorId}),and(usuario_id.eq.${receptorId},receptor_id.eq.${myId})`);
-    else query = query.is('receptor_id', null).is('grupo_id', null);
-
-    const { data } = await query.order('criado_em', { ascending: false });
+    const data = await buscarMensagensDaConversa(myId, grupoId, receptorId);
     if (data) setMessages(data.map(formatarMensagemSupabase));
   };
 
   const onSend = async (novasMensagens = []) => {
     const msgTexto = novasMensagens[0].text;
-    await supabase.from('mensagens').insert([{
+    await inserirMensagem({
       texto: msgTexto,
       usuario_id: currentUser.id,
       nome_usuario: currentUser.name,
       receptor_id: grupoId ? null : (receptorId || null),
       grupo_id: grupoId || null,
-    }]);
+    });
   };
 
   const escolherImagem = async () => {
@@ -113,28 +114,22 @@ export default function ConversaScreen() {
 
     if (!result.canceled && result.assets[0].base64) {
       const base64Data = result.assets[0].base64;
-      const byteChars = atob(base64Data);
-      const byteNums = new Array(byteChars.length);
-      for (let i = 0; i < byteChars.length; i++) byteNums[i] = byteChars.charCodeAt(i);
-      const blob = new Blob([new Uint8Array(byteNums)], { type: 'image/jpeg' });
-      const fileName = `msg_${currentUser.id}_${Date.now()}.jpg`;
-      const { data: uploadData, error } = await supabase.storage.from('post-images').upload(fileName, blob, { upsert: true, contentType: 'image/jpeg' });
-      if (!error && uploadData) {
-        const { data: urlData } = supabase.storage.from('post-images').getPublicUrl(fileName);
-        await supabase.from('mensagens').insert([{
+      const { publicUrl, error } = await uploadImagemMensagem(base64Data, currentUser.id);
+      if (!error && publicUrl) {
+        await inserirMensagem({
           texto: '',
-          imagem_url: urlData.publicUrl,
+          imagem_url: publicUrl,
           usuario_id: currentUser.id,
           nome_usuario: currentUser.name,
           receptor_id: grupoId ? null : (receptorId || null),
           grupo_id: grupoId || null,
-        }]);
+        });
       }
     }
   };
 
   const deletarMensagem = async () => {
-    await supabase.from('mensagens').delete().eq('id', mensagemSelecionada._id);
+    await deletarMensagemDB(mensagemSelecionada._id);
     setModalOpcoesVisivel(false);
   };
 

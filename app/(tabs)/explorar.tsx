@@ -4,10 +4,19 @@ import {
   ScrollView, TextInput, StatusBar, Image, Modal, Pressable,
   Dimensions,
 } from 'react-native';
-import { supabase } from '../../supabase';
+import { supabase } from '../../libs/supabase';
 import { router } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import PostCard from '../../components/PostCard';
+import { formatarTempo } from '../../utils/formatTime';
+import { buscarPostsComImagem } from '../../services/postService';
+import {
+  buscarCurtidasDoUsuario,
+  buscarTodasCurtidas,
+  curtir,
+  descurtir,
+} from '../../services/likeService';
+import { buscarContagemTodosComentarios } from '../../services/commentService';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const GRID_SIZE = Math.floor(SCREEN_WIDTH / 3) - 1;
@@ -63,11 +72,7 @@ export default function ExplorarScreen() {
 
   const buscarTudos = async (myId: string) => {
     // Posts de todos exceto o próprio usuário (ou todos)
-    const { data: postsData } = await supabase
-      .from('posts')
-      .select('*')
-      .not('imagem_url', 'is', null)
-      .order('criado_em', { ascending: false });
+    const postsData = await buscarPostsComImagem();
     if (postsData) setTodosPosts(postsData);
 
     // Todos os perfis (exceto o próprio)
@@ -79,7 +84,7 @@ export default function ExplorarScreen() {
     if (perfisData) setUsuarios(perfisData);
 
     // Curtidas do usuário
-    const { data: curtidasData } = await supabase.from('curtidas').select('post_id').eq('usuario_id', myId);
+    const curtidasData = await buscarCurtidasDoUsuario(myId);
     if (curtidasData) {
       const mapa: Record<string, boolean> = {};
       curtidasData.forEach(c => { mapa[c.post_id] = true; });
@@ -87,7 +92,7 @@ export default function ExplorarScreen() {
     }
 
     // Contagem de curtidas
-    const { data: todasCurtidas } = await supabase.from('curtidas').select('post_id');
+    const todasCurtidas = await buscarTodasCurtidas();
     if (todasCurtidas) {
       const contagem: Record<string, number> = {};
       todasCurtidas.forEach(c => { contagem[c.post_id] = (contagem[c.post_id] || 0) + 1; });
@@ -95,7 +100,7 @@ export default function ExplorarScreen() {
     }
 
     // Contagem de comentários
-    const { data: todosComentarios } = await supabase.from('comentarios').select('post_id');
+    const todosComentarios = await buscarContagemTodosComentarios();
     if (todosComentarios) {
       const contagem: Record<string, number> = {};
       todosComentarios.forEach(c => { contagem[c.post_id] = (contagem[c.post_id] || 0) + 1; });
@@ -107,11 +112,11 @@ export default function ExplorarScreen() {
     if (!usuarioAtual) return;
     const jaCurtiu = curtidas[postId];
     if (jaCurtiu) {
-      await supabase.from('curtidas').delete().eq('post_id', postId).eq('usuario_id', usuarioAtual.id);
+      await descurtir(postId, usuarioAtual.id);
       setCurtidas(prev => ({ ...prev, [postId]: false }));
       setContagemCurtidas(prev => ({ ...prev, [postId]: Math.max((prev[postId] || 1) - 1, 0) }));
     } else {
-      await supabase.from('curtidas').insert([{ post_id: postId, usuario_id: usuarioAtual.id }]);
+      await curtir(postId, usuarioAtual.id);
       setCurtidas(prev => ({ ...prev, [postId]: true }));
       setContagemCurtidas(prev => ({ ...prev, [postId]: (prev[postId] || 0) + 1 }));
     }
@@ -119,16 +124,6 @@ export default function ExplorarScreen() {
     if (postModal && postModal.id === postId) {
       setPostModal(prev => ({ ...prev, _contagem_curtidas: jaCurtiu ? Math.max((prev._contagem_curtidas || 1) - 1, 0) : (prev._contagem_curtidas || 0) + 1 }));
     }
-  };
-
-  const formatarTempo = (dataStr: string) => {
-    const agora = new Date();
-    const data = new Date(dataStr);
-    const diff = Math.floor((agora.getTime() - data.getTime()) / 1000);
-    if (diff < 60) return 'agora';
-    if (diff < 3600) return `${Math.floor(diff / 60)}m`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
-    return `${Math.floor(diff / 86400)}d`;
   };
 
   const iniciarDM = (usuario) => {

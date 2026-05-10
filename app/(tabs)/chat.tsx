@@ -15,7 +15,9 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { supabase } from '../../supabase';
+import { supabase } from '../../libs/supabase';
+import { buscarUltimasMensagensPrivadas } from '../../services/messageService';
+import { buscarGrupos as buscarGruposDB, inserirGrupo, deletarGrupo as deletarGrupoDB } from '../../services/groupService';
 
 export default function ChatScreen() {
   const [usuarioAtual, setUsuarioAtual] = useState(null);
@@ -113,17 +115,12 @@ export default function ChatScreen() {
   }, []);
 
   const buscarGrupos = async () => {
-    const { data } = await supabase.from('grupos').select('*').order('criado_em', { ascending: false });
+    const data = await buscarGruposDB();
     if (data) setGrupos(data);
   };
 
   const buscarConversasPrivadas = async (meuId) => {
-    const { data: mensagens } = await supabase
-      .from('mensagens')
-      .select('usuario_id, receptor_id, criado_em')
-      .is('grupo_id', null)
-      .or(`usuario_id.eq.${meuId},receptor_id.eq.${meuId}`)
-      .order('criado_em', { ascending: false });
+    const mensagens = await buscarUltimasMensagensPrivadas(meuId);
 
     if (mensagens && mensagens.length > 0) {
       const mapConversas = {};
@@ -152,12 +149,12 @@ export default function ChatScreen() {
     if (!novoGrupoNome) return;
     if (isPrivado && !novoGrupoSenha) { Alert.alert('Atenção', 'Defina uma senha.'); return; }
     const { data: { session } } = await supabase.auth.getSession();
-    const { error } = await supabase.from('grupos').insert([{
+    const { error } = await inserirGrupo({
       nome: novoGrupoNome,
       senha: isPrivado ? novoGrupoSenha : null,
       is_publico: !isPrivado,
       criado_por: session.user.id,
-    }]);
+    });
     if (!error) {
       setModalCriarVisivel(false);
       setNovoGrupoNome(''); setNovoGrupoSenha(''); setIsPrivado(false);
@@ -183,7 +180,7 @@ export default function ChatScreen() {
 
   const deletarGrupo = async () => {
     if (!grupoSelecionado) return;
-    await supabase.from('grupos').delete().eq('id', grupoSelecionado.id);
+    await deletarGrupoDB(grupoSelecionado.id);
     setModalDeletarVisivel(false); setGrupoSelecionado(null);
   };
 
